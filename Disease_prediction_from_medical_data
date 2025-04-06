@@ -1,0 +1,179 @@
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
+from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import classification_report, confusion_matrix, accuracy_score
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+# --- 1. Load the Dataset ---
+file_path = '/kaggle/input/heart-diseaseuci/heart.csv'
+
+print(f"Loading dataset from: {file_path}")
+try:
+    df = pd.read_csv(file_path)
+    print("Dataset loaded successfully.")
+except FileNotFoundError:
+    print(f"ERROR: File not found at {file_path}")
+    print("Please make sure you have added the 'Heart Disease UCI' dataset")
+    print("and that the file path is correct.")
+    # Stop execution if file not found
+    raise
+
+print(f"Dataset shape: {df.shape}")
+print("Dataset columns:", df.columns.tolist())
+print("\nSample data:")
+print(df.head())
+print("\nBasic dataset info:")
+df.info() # Check for missing values and data types
+
+# --- 2. Data Preparation ---
+print("\nPreparing data...")
+
+# Define features (X) and target (y)
+# Based on common usage of this dataset: 'target' is the label (0=No Disease, 1=Disease)
+target_column = 'target'
+# All other columns are potential features
+features = df.drop(target_column, axis=1).columns.tolist()
+
+X = df[features]
+y = df[target_column]
+
+print(f"\nTarget variable distribution (0=No Disease, 1=Disease):")
+print(y.value_counts(normalize=True))
+
+# Identify numerical and categorical features (based on dataset description/common sense)
+numerical_features = ['age', 'trestbps', 'chol', 'thalach', 'oldpeak']
+# Even though some look like numbers, they represent categories
+categorical_features = ['sex', 'cp', 'fbs', 'restecg', 'exang', 'slope', 'ca', 'thal']
+
+print(f"\nIdentified Numerical Features: {numerical_features}")
+print(f"Identified Categorical Features: {categorical_features}")
+
+# Split data into training and testing sets (80% train, 20% test)
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42, stratify=y
+)
+
+print(f"\nTraining set shape: {X_train.shape}")
+print(f"Testing set shape: {X_test.shape}")
+
+# --- 3. Create Preprocessing Pipelines ---
+# Pipeline for numerical features: Scale them
+numerical_transformer = Pipeline(steps=[
+    ('scaler', StandardScaler())
+])
+
+# Pipeline for categorical features: One-hot encode them
+# handle_unknown='ignore' prevents errors if test set has categories not seen in train set
+categorical_transformer = Pipeline(steps=[
+    ('onehot', OneHotEncoder(handle_unknown='ignore'))
+])
+
+# Create a preprocessor object using ColumnTransformer
+# This applies the correct transformer to the correct column type
+preprocessor = ColumnTransformer(
+    transformers=[
+        ('num', numerical_transformer, numerical_features),
+        ('cat', categorical_transformer, categorical_features)
+    ])
+
+# --- 4. Model Training ---
+print("\nTraining models...")
+
+# Model 1: Logistic Regression Pipeline
+# Chain the preprocessor and the classifier in a Pipeline
+log_reg_pipeline = Pipeline(steps=[
+    ('preprocessor', preprocessor),
+    ('classifier', LogisticRegression(random_state=42, class_weight='balanced', max_iter=1000))
+])
+log_reg_pipeline.fit(X_train, y_train)
+print("Logistic Regression training complete.")
+
+# Model 2: Random Forest Pipeline
+rf_pipeline = Pipeline(steps=[
+    ('preprocessor', preprocessor),
+    ('classifier', RandomForestClassifier(n_estimators=100, random_state=42, class_weight='balanced'))
+])
+rf_pipeline.fit(X_train, y_train)
+print("Random Forest training complete.")
+
+# --- 5. Model Evaluation ---
+print("\nEvaluating models on the test set...")
+
+# Evaluate Logistic Regression
+print("\n--- Logistic Regression Results ---")
+y_pred_lr = log_reg_pipeline.predict(X_test)
+print(f"Accuracy: {accuracy_score(y_test, y_pred_lr):.4f}")
+print("Confusion Matrix:")
+print(confusion_matrix(y_test, y_pred_lr))
+print("Classification Report:")
+print(classification_report(y_test, y_pred_lr, target_names=['No Disease (0)', 'Disease (1)']))
+
+# Evaluate Random Forest
+print("\n--- Random Forest Results ---")
+y_pred_rf = rf_pipeline.predict(X_test)
+print(f"Accuracy: {accuracy_score(y_test, y_pred_rf):.4f}")
+print("Confusion Matrix:")
+cm_rf = confusion_matrix(y_test, y_pred_rf)
+print(cm_rf)
+print("Classification Report:")
+print(classification_report(y_test, y_pred_rf, target_names=['No Disease (0)', 'Disease (1)']))
+
+# Visualize Random Forest Confusion Matrix
+plt.figure(figsize=(6, 4))
+sns.heatmap(cm_rf, annot=True, fmt='d', cmap='Blues',
+            xticklabels=['No Disease (0)', 'Disease (1)'],
+            yticklabels=['No Disease (0)', 'Disease (1)'])
+plt.xlabel('Predicted Label')
+plt.ylabel('True Label')
+plt.title('Random Forest Confusion Matrix')
+plt.show()
+
+
+# --- 6. Prediction on New (Hypothetical) Data ---
+print("\n--- Predicting on New Hypothetical Data ---")
+
+# Create new data with the SAME columns as the original training features (X)
+# IMPORTANT: Column names and order must match EXACTLY
+new_patient_data = pd.DataFrame({
+    'age': [52, 65],
+    'sex': [1, 0], # 1=Male, 0=Female
+    'cp': [0, 2],  # Chest Pain type
+    'trestbps': [128, 140], # Resting Blood Pressure
+    'chol': [204, 255], # Cholesterol
+    'fbs': [1, 0],  # Fasting Blood Sugar > 120 mg/dl (1=True, 0=False)
+    'restecg': [1, 0], # Resting Electrocardiographic Results
+    'thalach': [156, 130], # Maximum Heart Rate Achieved
+    'exang': [1, 0], # Exercise Induced Angina (1=Yes, 0=No)
+    'oldpeak': [1.0, 0.5], # ST depression induced by exercise relative to rest
+    'slope': [1, 2], # Slope of the peak exercise ST segment
+    'ca': [0, 1], # Number of major vessels colored by fluoroscopy
+    'thal': [2, 3] # Thalassemia (defect type)
+})
+
+print("\nHypothetical Patient Data:")
+print(new_patient_data)
+
+# Use the TRAINED PIPELINE to predict (it handles preprocessing automatically)
+# Let's use the Random Forest pipeline as it often performs well
+new_predictions_rf = rf_pipeline.predict(new_patient_data)
+new_predictions_proba_rf = rf_pipeline.predict_proba(new_patient_data) # Get probabilities
+
+print("\nPredictions using Random Forest:")
+for i, pred in enumerate(new_predictions_rf):
+    status = "Disease" if pred == 1 else "No Disease"
+    probability_disease = new_predictions_proba_rf[i][1] # Probability of class 1 (Disease)
+    print(f"Patient {i+1}: Predicted Status = {status} (Probability of Disease: {probability_disease:.3f})")
+
+# You could do the same with the Logistic Regression pipeline:
+# new_predictions_lr = log_reg_pipeline.predict(new_patient_data)
+# print("\nPredictions using Logistic Regression:", new_predictions_lr)
+
+
+print("\n--- Reminder ---")
+print("This model is based on the Heart Disease UCI dataset from Kaggle.")
